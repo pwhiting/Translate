@@ -1,0 +1,67 @@
+from google.cloud import firestore
+import google.cloud.exceptions
+import os
+
+# Ensure you've set GOOGLE_APPLICATION_CREDENTIALS in your environment
+# or specify the path here
+# os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "path/to/your/credentials.json"
+
+def clear_firestore_collections(project_id="translate-444611"):
+    print(f"Connecting to Firestore in project: {project_id}")
+    db = firestore.Client(project=project_id)
+    
+    try:
+        # Delete all documents in translations subcollections
+        meetings_ref = db.collection('meetings')
+        meetings = meetings_ref.stream()
+        
+        meeting_count = 0
+        translation_count = 0
+        metadata_count = 0
+        
+        for meeting in meetings:
+            meeting_id = meeting.id
+            print(f"\nProcessing meeting: {meeting_id}")
+            
+            # Delete translations
+            translations_ref = meeting.reference.collection('translations')
+            trans_deleted = delete_collection(translations_ref)
+            translation_count += trans_deleted
+            print(f"Deleted {trans_deleted} translations")
+            
+            # Delete metadata (sequence numbers)
+            metadata_ref = meeting.reference.collection('metadata')
+            meta_deleted = delete_collection(metadata_ref)
+            metadata_count += meta_deleted
+            print(f"Deleted {meta_deleted} metadata documents")
+            
+            # Delete the meeting document itself
+            meeting.reference.delete()
+            meeting_count += 1
+            
+        print(f"\nCleanup complete:")
+        print(f"Deleted {meeting_count} meetings")
+        print(f"Deleted {translation_count} translations")
+        print(f"Deleted {metadata_count} metadata documents")
+
+    except google.cloud.exceptions.NotFound as e:
+        print(f"Error: Collection not found - {e}")
+    except Exception as e:
+        print(f"Error: {str(e)}")
+
+def delete_collection(coll_ref, batch_size=100):
+    docs = coll_ref.limit(batch_size).stream()
+    deleted = 0
+
+    for doc in docs:
+        print(f"Deleting document: {doc.id}")
+        doc.reference.delete()
+        deleted += 1
+
+    if deleted >= batch_size:
+        return deleted + delete_collection(coll_ref, batch_size)
+    
+    return deleted
+
+if __name__ == "__main__":
+    clear_firestore_collections()

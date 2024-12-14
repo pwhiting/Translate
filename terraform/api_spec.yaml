@@ -1,0 +1,137 @@
+swagger: '2.0'
+info:
+  title: Translation Meeting API
+  description: API for real-time translation meetings
+  version: 1.0.0
+schemes:
+  - https
+produces:
+  - application/json
+paths:
+  /join:
+    post:
+      summary: Join a translation meeting
+      operationId: joinMeeting
+      x-google-backend:
+        address: ${join_meeting_function_url}
+      consumes:
+        - application/json
+      parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            type: object
+            required:
+              - meetingCode
+              - targetLanguage
+            properties:
+              meetingCode:
+                type: string
+              targetLanguage:
+                type: string
+      responses:
+        '200':
+          description: Successfully joined meeting
+          schema:
+            type: object
+            properties:
+              success:
+                type: boolean
+              participantId:
+                type: string
+        '400':
+          description: Invalid request
+        '500':
+          description: Server error
+  /audio:
+    post:
+      summary: Process audio for translation
+      operationId: processAudio
+      x-google-backend:
+        address: ${process_audio_function_url}
+      consumes:
+        - application/json
+      parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            type: object
+            required:
+              - meetingCode
+              - sourceLanguage
+              - audioData
+            properties:
+              meetingCode:
+                type: string
+              sourceLanguage:
+                type: string
+              audioData:
+                type: string
+      responses:
+        '200':
+          description: Successfully processed audio
+          schema:
+            type: object
+            properties:
+              success:
+                type: boolean
+              transcription:
+                type: string
+        '400':
+          description: Invalid request
+        '500':
+          description: Server error
+  /translations:
+    get:
+      summary: Get translations for a meeting
+      operationId: getTranslations
+      x-google-backend:
+        address: ${get_translations_function_url}
+      parameters:
+        - in: query
+          name: meetingCode
+          required: true
+          type: string
+        - in: query
+          name: targetLanguage
+          required: true
+          type: string
+        - in: query
+          name: timestamp
+          required: false
+          type: string
+      responses:
+        '200':
+          description: Successfully retrieved translations
+          schema:
+            type: object
+            properties:
+              success:
+                type: boolean
+              translations:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    messageId:
+                      type: string
+                    translatedText:
+                      type: string
+                    sourceLanguage:
+                      type: string
+                    targetLanguage:
+                      type: string
+                    timestamp:
+                      type: number
+                    isComplete:
+                      type: boolean
+                    empty:
+                      type: boolean
+        '400':
+          description: Invalid request
+        '500':
+          description: Server error

@@ -1,0 +1,121 @@
+# 1. Login to gcloud (if not already logged in)
+gcloud auth login
+
+# 2. List and select project
+echo "Available projects:"
+gcloud projects list --format="table(projectId,name,projectNumber)" --sort-by=projectId
+
+echo -e "\nEnter the project ID you want to use from the list above:"
+read -r PROJECT_ID
+
+# Verify project ID exists
+if ! gcloud projects describe "$PROJECT_ID" >/dev/null 2>&1; then
+    echo "Error: Project $PROJECT_ID not found"
+    exit 1
+fi
+
+# 3. Set the current project
+gcloud config set project "$PROJECT_ID"
+
+# 4. Update application default credentials with quota project
+gcloud auth application-default set-quota-project "$PROJECT_ID"
+
+# 5. Check billing status explicitly
+BILLING_ENABLED=$(gcloud billing projects describe "$PROJECT_ID" --format="get(billingEnabled)" 2>/dev/null)
+if [[ "$BILLING_ENABLED" != "True" ]]; then
+    echo "Billing is not enabled for project $PROJECT_ID"
+    echo "Please enable billing at https://console.cloud.google.com/billing/projects"
+    echo "1. Visit the URL above"
+    echo "2. Select project $PROJECT_ID"
+    echo "3. Link it to a billing account"
+    echo -e "\nPress Enter once billing is enabled to continue, or Ctrl+C to exit"
+    read -r
+    
+    # Verify billing again
+    BILLING_ENABLED=$(gcloud billing projects describe "$PROJECT_ID" --format="get(billingEnabled)" 2>/dev/null)
+    if [[ "$BILLING_ENABLED" != "True" ]]; then
+        echo "Billing is still not enabled. Exiting..."
+        exit 1
+    fi
+fi
+
+echo "Billing is enabled. Continuing with setup..."
+
+# 6. Create a service account for Terraform
+SA_EMAIL="terraform-sa@$PROJECT_ID.iam.gserviceaccount.com"
+if ! gcloud iam service-accounts describe "$SA_EMAIL" >/dev/null 2>&1; then
+    echo "Creating service account..."
+    gcloud iam service-accounts create terraform-sa \
+      --description="Service Account for Terraform" \
+      --display-name="Terraform Service Account"
+else
+    echo "Service account already exists, skipping creation..."
+fi
+
+# 7. Grant necessary roles to the service account
+echo "Granting IAM roles..."
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:terraform-sa@$PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/owner"
+
+# 8. Create and download service account key
+echo "Creating service account key..."
+gcloud iam service-accounts keys create terraform-sa-key.json \
+  --iam-account=terraform-sa@"$PROJECT_ID".iam.gserviceaccount.com
+
+# 9. Set the application credentials environment variable
+export GOOGLE_APPLICATION_CREDENTIALS="$(pwd)/terraform-sa-key.json"
+
+# 10. Enable required APIs
+echo "Enabling required APIs..."
+APIS=(
+    "cloudfunctions.googleapis.com"
+    "cloudresourcemanager.googleapis.com"
+    "cloudbuild.googleapis.com"
+    "speech.googleapis.com"
+    "translate.googleapis.com"
+    "apigateway.googleapis.com"
+    "servicemanagement.googleapis.com"
+    "servicecontrol.googleapis.com"
+    "firestore.googleapis.com"
+)
+
+for api in "${APIS[@]}"; do
+    echo "Enabling $api..."
+    gcloud services enable "$api" --async
+done
+
+# Wait for APIs to be enabled
+echo "Waiting for APIs to be enabled..."
+sleep 30
+
+# 11. Initialize Firestore
+echo "Checking if Firestore is already initialized..."
+if ! gcloud firestore databases list 2>/dev/null | grep -q 'Database'; then
+    echo "Initializing Firestore..."
+    gcloud firestore databases create --location=us-central1
+else
+    echo "Firestore already initialized, skipping..."
+fi
+
+# 12. Verify setup
+echo -e "\nCurrent configuration:"
+echo "----------------------"
+echo "Authenticated accounts:"
+gcloud auth list
+echo -e "\nCurrent config:"
+gcloud config list
+echo -e "\nProject details:"
+gcloud projects describe "$PROJECT_ID"
+
+# 13. Create terraform.tfvars file
+echo "Creating terraform.tfvars..."
+cat > terraform.tfvars << EOF
+project_id = "$PROJECT_ID"
+region     = "us-central1"
+EOF
+
+echo -e "\nSetup complete! You can now run:"
+echo "terraform init"
+echo "terraform plan"
+echo "terraform apply"
