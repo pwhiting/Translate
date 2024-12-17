@@ -1,0 +1,5 @@
+flask==3.0.0
+gunicorn==21.2.0
+google-cloud-speech==2.21.0
+google-cloud-pubsub==2.18.4
+google-cloud-logging==3.8.0
